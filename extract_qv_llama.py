@@ -128,12 +128,13 @@ for i in tqdm(range(num_images)):
     # Run the model
     with torch.inference_mode():
         # outputs = model(**inputs, output_attentions=False)
-        outputs = model.generate(**inputs, max_new_tokens=20, use_cache=True, return_dict_in_generate=True, output_hidden_states=True, output_attentions=True)
+        outputs = model.generate(**inputs, max_new_tokens=20, use_cache=True, past_key_values=None, return_dict_in_generate=True, output_hidden_states=True, output_attentions=True)
         # clear_gpu_memory()
     # Close hooks
     for feature in features.values():
         feature.close()
-    
+    print(outputs)
+    an
     print(([attn[0].shape for attn in outputs.attentions]))
     all_sentences.append(processor.batch_decode(outputs['sequences'], skip_special_tokens=True)[0].strip())
     print(processor.batch_decode(outputs['sequences'], skip_special_tokens=True)[0].strip())
