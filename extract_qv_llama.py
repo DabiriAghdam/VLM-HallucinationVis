@@ -1,7 +1,6 @@
 from collections import OrderedDict
 import torch
 import numpy as np
-# from tqdm import tqdm
 from transformers import LlavaProcessor, LlavaForConditionalGeneration, AutoTokenizer, CLIPImageProcessor, AutoProcessor
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
@@ -25,20 +24,10 @@ tqdm = partial(std_tqdm, dynamic_ncols=True)
 
 torch.set_printoptions(precision=3)
 
-class ModuleHook:
-    def __init__(self, module):
-        self.hook = module.register_forward_hook(self.hook_fn)
-        self.features = []
-    def hook_fn(self, module, input, output):
-        self.features.append(output.detach())
-    def close(self):
-        self.hook.remove()
-
 def create_output_dirs():
     os.makedirs("original_images", exist_ok=True)
     os.makedirs("llava_image_patches", exist_ok=True)
     os.makedirs("llava_attention", exist_ok=True)
-    # os.makedirs("llava_embeddings", exist_ok=True)
 
 def convert_image_to_base64(filepath):
     binary_fc = open(filepath, 'rb').read()
@@ -73,28 +62,29 @@ model = LlavaForConditionalGeneration.from_pretrained(
 num_images = 2
 patch_size = 14 
 border_width = int(patch_size / 8)
-# Adjust the bias term (Out of date, don't use)
-adjust_bias_term = False
+
 centering = False
 scale = False
 num_layers = model.config.text_config.num_hidden_layers
 num_heads = model.config.text_config.num_attention_heads
 head_dim = model.config.text_config.hidden_size // num_heads
 image_token_index = model.config.image_token_index
+
 # Load and initialize tokenizer and image processor
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 image_processor = CLIPImageProcessor.from_pretrained("openai/clip-vit-large-patch14-336")
 processor = LlavaProcessor(tokenizer=tokenizer, image_processor=image_processor)
 processor.vision_feature_select_strategy = "default"
 processor.patch_size = patch_size
-# processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
+
 # Initialize vision tower
 model.vision_tower.to(model.device)
-model.eval()  # Set to evaluation mode
+model.eval()
 
 # Freeze model parameters
 for param in model.parameters():
     param.requires_grad = False
+
 # Single image and text
 urls = ["https://raw.githubusercontent.com/salesforce/LAVIS/main/docs/_static/Confusing-Pictures.jpg", 
         "http://images.cocodataset.org/val2017/000000039769.jpg"]
@@ -107,14 +97,9 @@ all_patches = None
 all_images = []
 all_sentences = []
 all_token_ids = []
+
 for i in tqdm(range(num_images)):
     clear_gpu_memory()
-      # Initialize the hook
-    features = OrderedDict()
-    # Set up hooks to extract query and key features
-    for name, module in model.named_modules():
-        if isinstance(module, torch.nn.Linear) and ("q_proj" in name or "k_proj" in name):
-            features[name] = ModuleHook(module)
 
     # Load the image
     image = Image.open(requests.get(urls[i], stream=True).raw)
@@ -122,37 +107,25 @@ for i in tqdm(range(num_images)):
     # Create directory for original images
     create_output_dirs()
 
-    # Process the single image
-    inputs = image_processor(image, return_tensors="pt")
-
     # Process the image and text
     inputs = processor(images=image, text=text, padding=True, return_tensors="pt")
     inputs = inputs.to(model.device, torch.float16)
+
     # Run the model
     with torch.inference_mode():
-        # outputs = model(**inputs, output_attentions=False)
-        outputs = model.generate(**inputs, max_new_tokens=20, use_cache=True, past_key_values=None, return_dict_in_generate=True, output_hidden_states=True, output_attentions=True)
-        # clear_gpu_memory()
-    # Close hooks
-    for feature in features.values():
-        feature.close()
+        outputs = model.generate(**inputs, max_new_tokens=20, use_cache=True, return_dict_in_generate=True, output_attentions=True)
 
     all_sentences.append(processor.batch_decode(outputs['sequences'], skip_special_tokens=True)[0].strip())
     all_token_ids.append(outputs['sequences'][0])
 
-    # Suppose 'outputs.attentions' is the list of attention tensors as described.
     attentions = outputs.attentions
 
     num_layers = len(attentions[0])  # Number of layers
     batch_size, num_heads, M, _ = attentions[0][0].shape 
     final_len = attentions[-1][0].shape[-1]
-    print(50 * "*")
-    print(batch_size, num_heads, M, _)
-    print(final_len)
-    print(50 * "*")
+
     full_attentions = []
     for layer in range(num_layers):
-        
 
         full_attention = torch.zeros(batch_size, num_heads, final_len, final_len, \
             dtype=attentions[0][layer].dtype, device=attentions[0][layer].device)
@@ -162,26 +135,22 @@ for i in tqdm(range(num_images)):
         # Now, fill in each subsequent row from the remaining attentions.
         # attentions[i] for i>0 has shape [1, num_heads, 1, M+i]
         # That corresponds to the (M + (i-1))th row in the final matrix.
-        for i in range(1, len(attentions)):
+        for vector_index in range(1, len(attentions)):
             # This is one new row (the i-th generated token, zero-based index)
-            row_index = M + (i - 1) 
+            row_index = M + (vector_index - 1) 
             # attentions[i][0] has shape [num_heads, 1, M+i], we want to place it at:
             # full_attention[:, :, row_index, :M+i] = that row
-            full_attention[:, :, row_index:row_index+1, :M+i] = attentions[i][layer]
+            full_attention[:, :, row_index:row_index+1, :M+vector_index] = attentions[vector_index][layer]
+
+        # Now 'full_attention' contains a [batch_size, num_heads, final_len, final_len] for the model.
         full_attentions.append(full_attention)
 
-    # Now 'full_attention' contains a [1, 32, 613, 613] tensor in your example
-    # or generally [batch_size, num_heads, final_len, final_len] for the model.
-
-    an
-
+    all_attentions[i] = full_attentions
 
     # Preprocess the image for patch extraction
     np_image = inputs.pixel_values[0].permute(1, 2, 0).cpu().numpy()
     all_images.append(np_image)
     np_image = (np_image - np_image.min()) / (np_image.max() - np_image.min())
-    # np_image /= 2
-    # np_image += 0.5
 
     # Save processed image
     filename_prefix = urls[i][urls[i].rfind("/") + 1:urls[i].rfind(".")]
@@ -211,47 +180,19 @@ for i in tqdm(range(num_images)):
     green_border_h = np.repeat(np.expand_dims(green_border_h, 0), (h // patch_size) ** 2, axis=0)
     green_border_v = np.repeat(np.expand_dims(green_border_v, 0), (h // patch_size) ** 2, axis=0)
 
-    # Extract and process features
-    attentions = {}
     for layer in range(num_layers):
         if i == 0:
             all_output[layer] = {}
-        attentions[layer] = {}
-        layer_query_name = f"language_model.model.layers.{layer}.self_attn.q_proj"
-        layer_key_name = f"language_model.model.layers.{layer}.self_attn.k_proj"
-        if adjust_bias_term and False:
-            raw_query_feature = features[layer_query_name].features[0].cpu().detach().numpy()[0, :] - model.encoder.layer[layer].attention.attention.query.bias.clone().cpu().detach().numpy()
-            raw_key_feature = features[layer_key_name].features[0].cpu().detach().numpy()[0, :] - model.encoder.layer[layer].attention.attention.key.bias.clone().cpu().detach().numpy()
-        else:
-            #is it correct?
-            concatenated_hidden_states = torch.cat([step_hidden_states[layer + 1] for step_hidden_states in outputs['hidden_states']], dim=1)
-            raw_query_feature = model.language_model.model.layers[layer].self_attn.q_proj(concatenated_hidden_states) #features[layer_query_name].features[0].cpu().detach().numpy()[0, :]
-            raw_key_feature = outputs['past_key_values'][layer][0].permute(0, 2, 1, 3).contiguous().view(1, outputs['past_key_values'][layer][0].size(2), -1) #features[layer_key_name].features[0].cpu().detach().numpy()[0, :]
-            #.contiguous()?
-        # query_heads = torch.split(features[layer_query_name].features[0], features[layer_query_name].features[0].size(-1) // num_heads, dim=-1)
-        # key_heads = torch.split(features[layer_key_name].features[0], features[layer_key_name].features[0].size(-1) // num_heads, dim=-1)
-        query_heads = torch.split(raw_query_feature, raw_query_feature.size(-1) // num_heads, dim=-1)
-        key_heads = torch.split(raw_key_feature, raw_key_feature.size(-1) // num_heads, dim=-1)
-        # print(query_heads[0].shape)
-        # print(key_heads[0].shape)
 
-        list_tensor = []
+        query_heads = shared_state.query_key[layer][0]
+        key_heads = shared_state.query_key[layer][1]
+
         for head in range(num_heads):
-            list_tensor.append(nn.functional.softmax(torch.bmm(query_heads[head], key_heads[head].transpose(1, 2)) / np.sqrt(head_dim), dim=-1))
-        attentions[layer] = torch.stack(list_tensor, dim=1)
-        
-        for head in range(num_heads):
-            combined = np.concatenate([query_heads[head].cpu().detach().numpy()[0, :], key_heads[head].cpu().detach().numpy()[0, :]])
+            combined = np.concatenate([query_heads[:, head, :, :].cpu().detach().numpy()[0, :], key_heads[:, head, :, :].cpu().detach().numpy()[0, :]])
             if (i == 0):
                 all_output[layer][head] = combined
             else:
                 all_output[layer][head] = np.concatenate([all_output[layer][head], combined])
-
-    all_attentions[i] = attentions
-    print(attentions[0].shape)
-
-    # for idx, attn_matrix in enumerate(all_attention_matrices):
-    #     print(attn_matrix == all_attentions[i][idx]) 
 
     key_image_patches = np.concatenate([pink_border_v, 
                                         np.concatenate([pink_border_h, image_patches, pink_border_h], axis=2),
@@ -308,19 +249,12 @@ sem_idx_to_class[0] = "bg"
 
 semantic_labels = {}
 for nth_image in range(num_images):
-    semantic_labels[nth_image] = ["CLS"]
+    semantic_labels[nth_image] = []
     seg = torch.argmax(output[nth_image], dim=0).cpu().detach().numpy()
     for i in range(0, 336, patch_size):
         for j in range(0, 336, patch_size):
             label = sem_idx_to_class[mode(seg[i: i + patch_size, j: j + patch_size].ravel())[0][0]]
             semantic_labels[nth_image].append(label)
-
-# Save segmentation image instead of displaying
-# plt.figure()
-# plt.title("Segmentation Result")
-# plt.imshow(seg)
-# plt.savefig("segmentation_result.png")
-# plt.close()
 
 # After saving embeddings, add JSON creation
 os.makedirs(f"llava_layer", exist_ok=True)
@@ -389,19 +323,15 @@ def process_text_token(token_type, pos_int, position, token_id, sentence):
 
 def process_image_token(token_type, i, filename_prefix, patch_size, semantic_labels, nth_data):
     """Process an image token and return its token data"""
-    if i == 0:
-        dataurl = f"https://raw.githubusercontent.com/catherinesyeh/attention-viz/VIT-vis/img/cls_{token_type}_image.png"
-        original_patch_dataurl = dataurl
-        original_image_dataurl = convert_image_to_base64(f"original_images/original_image_{filename_prefix}.png")
-    else:
-        dataurl = convert_image_to_base64(f"llava_image_patches/{token_type}_{filename_prefix}_patch_{i-1}.png")
-        original_patch_dataurl = dataurl
-        original_image_dataurl = "null"
     
-    row = 0 if i == 0 else (i - 1) // (336 // patch_size)
-    col = 0 if i == 0 else (i - 1) % (336 // patch_size)
+    dataurl = convert_image_to_base64(f"llava_image_patches/{token_type}_{filename_prefix}_patch_{i}.png")
+    original_patch_dataurl = dataurl
+    original_image_dataurl = "null"
+    
+    row = i // (336 // patch_size)
+    col = i % (336 // patch_size)
     ad_row = row
-    ad_col = -1 if i == 0 else col
+    ad_col = col
     
     return {
         "originalImagePath": original_image_dataurl,
@@ -420,7 +350,7 @@ for nth_data in range(num_images):
     filename_prefix = urls[nth_data][urls[nth_data].rfind("/") + 1:urls[nth_data].rfind(".")]
     
     token_ids = all_token_ids[nth_data]
-    # input_ids = inputs["input_ids"][0]
+
     for token_type in ["query", "key"]:
         position = 0 #???
         i = 0
