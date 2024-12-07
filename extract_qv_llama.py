@@ -18,6 +18,9 @@ import torch.nn as nn
 
 from functools import partial
 from tqdm import tqdm as std_tqdm
+
+from transformers.models.llama import shared_state
+
 tqdm = partial(std_tqdm, dynamic_ncols=True)
 
 torch.set_printoptions(precision=3)
@@ -133,45 +136,45 @@ for i in tqdm(range(num_images)):
     # Close hooks
     for feature in features.values():
         feature.close()
-    print(outputs)
-    an
-    print(([attn[0].shape for attn in outputs.attentions]))
+
     all_sentences.append(processor.batch_decode(outputs['sequences'], skip_special_tokens=True)[0].strip())
-    print(processor.batch_decode(outputs['sequences'], skip_special_tokens=True)[0].strip())
     all_token_ids.append(outputs['sequences'][0])
 
-    # all_attentions[i] = outputs.attentions[-1]
-
-    # Assuming outputs.attentions is a list of tensors with varying sizes
+    # Suppose 'outputs.attentions' is the list of attention tensors as described.
     attentions = outputs.attentions
-    # Initialize the list to store the attention matrices for each layer
-    attention_matrices = [[] for _ in range(len(attentions[0]))]
-    # Process the self-attention for the input tokens
-    for layer_idx in range(len(attentions[0])):
-        self_attention = attentions[0][layer_idx].squeeze(0)
-        attention_matrices[layer_idx].append(self_attention)
-    # Process the attention for the generated tokens
-    for attn in attentions[1:]:
-        for layer_idx in range(len(attn)):
-            attention_matrices[layer_idx].append(attn[layer_idx].squeeze(0))
-    # Concatenate the attention matrices along the token dimension for each layer
-    all_attention_matrices = []
-    for layer_attns in attention_matrices:
-        # Find the maximum size along the token dimension
-        max_size = max(attn.size(-1) for attn in layer_attns)
-        # Pad the tensors to match the maximum size
-        padded_attns = []
-        for attn in layer_attns:
-            pad_size = max_size - attn.size(-1)
-            padded_attn = torch.nn.functional.pad(attn, (0, pad_size))
-            padded_attns.append(padded_attn)
-        # Concatenate the padded tensors along the token dimension
-        all_attention_matrices.append(torch.cat(padded_attns, dim=1))
-    # Now all_attention_matrices should contain the attention matrices for each layer
-    # for idx, attn_matrix in enumerate(all_attention_matrices):
-    #     print(f"Layer {idx} attention matrix shape: {attn_matrix.shape}")  # Should print torch.Size([32, 613, 613])
-    #is this correct?
-    # all_attentions[i] = all_attention_matrices
+
+    num_layers = len(attentions[0])  # Number of layers
+    batch_size, num_heads, M, _ = attentions[0][0].shape 
+    final_len = attentions[-1][0].shape[-1]
+    print(50 * "*")
+    print(batch_size, num_heads, M, _)
+    print(final_len)
+    print(50 * "*")
+    full_attentions = []
+    for layer in range(num_layers):
+        
+
+        full_attention = torch.zeros(batch_size, num_heads, final_len, final_len, \
+            dtype=attentions[0][layer].dtype, device=attentions[0][layer].device)
+
+        full_attention[:, :, :M, :M] = attentions[0][layer]
+
+        # Now, fill in each subsequent row from the remaining attentions.
+        # attentions[i] for i>0 has shape [1, num_heads, 1, M+i]
+        # That corresponds to the (M + (i-1))th row in the final matrix.
+        for i in range(1, len(attentions)):
+            # This is one new row (the i-th generated token, zero-based index)
+            row_index = M + (i - 1) 
+            # attentions[i][0] has shape [num_heads, 1, M+i], we want to place it at:
+            # full_attention[:, :, row_index, :M+i] = that row
+            full_attention[:, :, row_index:row_index+1, :M+i] = attentions[i][layer]
+        full_attentions.append(full_attention)
+
+    # Now 'full_attention' contains a [1, 32, 613, 613] tensor in your example
+    # or generally [batch_size, num_heads, final_len, final_len] for the model.
+
+    an
+
 
     # Preprocess the image for patch extraction
     np_image = inputs.pixel_values[0].permute(1, 2, 0).cpu().numpy()
