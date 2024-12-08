@@ -2,6 +2,7 @@ llava_attention/
 llava_image_patches/
 llava_layer/
 original_images/
+attention-viz/data
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
