@@ -213,26 +213,6 @@ for i in tqdm(range(num_images)):
     
     shared_state.query_key = DynamicCache()
 
-if centering:
-    queries = all_queries[layer][head].copy().astype("float")
-    keys = all_keys[layer][head].copy().astype("float")
-    mean_shift = np.mean(queries, axis=0) - np.mean(keys, axis=0)
-    keys += mean_shift
-    all_keys[layer][head] = keys
-
-if scale:
-    queries = all_queries[layer][head].copy().astype("float")
-    keys = all_keys[layer][head].copy().astype("float")
-    q_n = np.linalg.norm(queries, axis=1).mean()
-    k_n = np.linalg.norm(keys, axis=1).mean()
-    
-    c = np.sqrt(q_n / k_n) 
-
-    keys *= c
-    queries *= (1 / c)
-    all_keys[layer][head] = keys
-    all_queries[layer][head] = queries
-
 last_start = 0
 last_end = 0
 for i in range(num_images):
@@ -241,18 +221,37 @@ for i in range(num_images):
 
     last_start += start
     last_end += end
-    print(last_start, last_end)
 
     for layer in range(num_layers):
-            if i == 0:
-                all_output[layer] = {}
+        if i == 0:
+            all_output[layer] = {}
 
-            for head in range(num_heads):
-                combined = np.concatenate([all_queries[layer][head][last_start:last_end], all_keys[layer][head][last_start:last_end]])
-                if (i == 0):
-                    all_output[layer][head] = combined
-                else:
-                    all_output[layer][head] = np.concatenate([all_output[layer][head], combined])
+        for head in range(num_heads):
+            if centering:
+                queries = all_queries[layer][head].copy().astype("float")
+                keys = all_keys[layer][head].copy().astype("float")
+                mean_shift = np.mean(queries, axis=0) - np.mean(keys, axis=0)
+                keys += mean_shift
+                all_keys[layer][head] = keys
+
+            if scale:
+                queries = all_queries[layer][head].copy().astype("float")
+                keys = all_keys[layer][head].copy().astype("float")
+                q_n = np.linalg.norm(queries, axis=1).mean()
+                k_n = np.linalg.norm(keys, axis=1).mean()
+                
+                c = np.sqrt(q_n / k_n) 
+
+                keys *= c
+                queries *= (1 / c)
+                all_keys[layer][head] = keys
+                all_queries[layer][head] = queries
+        
+            combined = np.concatenate([all_queries[layer][head][last_start:last_end], all_keys[layer][head][last_start:last_end]])
+            if (i == 0):
+                all_output[layer][head] = combined
+            else:
+                all_output[layer][head] = np.concatenate([all_output[layer][head], combined])
 
 # Perform dimensionality reduction
 llava_embeddeds = {"PCA": {}, "TSNE": {}, "UMAP": {}, "PCA_3d": {}, "TSNE_3d": {}, "UMAP_3d": {}}
@@ -297,7 +296,12 @@ for nth_image in range(num_images):
             label = sem_idx_to_class[mode(seg[i: i + patch_size, j: j + patch_size].ravel())[0][0]]
             semantic_labels[nth_image].append(label)
 
-# After saving embeddings, add JSON creation
+aggregated_tokens = []
+for tokens in all_token_ids: #forquries
+    aggregated_tokens.extend(tokens)
+for tokens in all_token_ids: #for keys
+    aggregated_tokens.extend(tokens)
+
 os.makedirs(f"llava_layer", exist_ok=True)
 # Create embedding JSONs
 for layer in tqdm(range(num_layers)):
@@ -323,7 +327,8 @@ for layer in tqdm(range(num_layers)):
                 "umap_y": round(float(llava_embeddeds["PCA"][layer][head][i, 1]), 3),
                 "umap_x_3d": round(float(llava_embeddeds["PCA_3d"][layer][head][i, 0]), 3),
                 "umap_y_3d": round(float(llava_embeddeds["PCA_3d"][layer][head][i, 1]), 3),
-                "umap_z_3d": round(float(llava_embeddeds["PCA_3d"][layer][head][i, 2]), 3)
+                "umap_z_3d": round(float(llava_embeddeds["PCA_3d"][layer][head][i, 2]), 3),
+                "is_image": True if aggregated_tokens[i] == image_token_index else False,
             }
             embedding_json["tokens"].append(token_data)
         
