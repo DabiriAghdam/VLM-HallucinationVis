@@ -1,7 +1,7 @@
 <template>
   <nav class="navbar navbar-light bg-light">
     <div class="container-fluid">
-      <span class="navbar-brand mb-0 h1">Attention Viz</span>
+      <span class="navbar-brand mb-0 h1">VLM Hallucination Viz</span>
       <div class="dropdown">
         <label for="layernum" style="margin-left: 0">Zoom to Layer</label>
         <a-tooltip placement="bottomRight">
@@ -105,6 +105,7 @@ export default defineComponent({
     onMounted(async () => {
       await store.dispatch("init");
       // setTheme(state.userTheme);
+      setTheme("dark-theme");
     });
 
     // update graph settings based on dropdown option selected
@@ -144,7 +145,7 @@ export default defineComponent({
 
     const getTheme = () => {
       console.log("get theme");
-      return localStorage.getItem("user-theme") || "light-theme";
+      return localStorage.getItem("user-theme") || "dark-theme";
     }
 
     const setTheme = (theme: string) => {
