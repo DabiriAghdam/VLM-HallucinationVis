@@ -19,6 +19,7 @@ from functools import partial
 from tqdm import tqdm as std_tqdm
 
 from transformers.models.llama import shared_state
+from transformers.cache_utils import Cache, DynamicCache, StaticCache
 
 tqdm = partial(std_tqdm, dynamic_ncols=True)
 
@@ -186,14 +187,12 @@ for i in tqdm(range(num_images)):
 
         query_heads = shared_state.query_key[layer][0]
         key_heads = shared_state.query_key[layer][1]
-
         for head in range(num_heads):
             combined = np.concatenate([query_heads[:, head, :, :].cpu().detach().numpy()[0, :], key_heads[:, head, :, :].cpu().detach().numpy()[0, :]])
             if (i == 0):
                 all_output[layer][head] = combined
             else:
                 all_output[layer][head] = np.concatenate([all_output[layer][head], combined])
-
     key_image_patches = np.concatenate([pink_border_v, 
                                         np.concatenate([pink_border_h, image_patches, pink_border_h], axis=2),
                                         pink_border_v], axis=1)
@@ -206,11 +205,12 @@ for i in tqdm(range(num_images)):
         plt.imsave(f"llava_image_patches/{filename_prefix}_patch_{nth_image}.png", image_patches[nth_image])
         plt.imsave(f"llava_image_patches/key_{filename_prefix}_patch_{nth_image}.png", key_image_patches[nth_image])
         plt.imsave(f"llava_image_patches/query_{filename_prefix}_patch_{nth_image}.png", query_image_patches[nth_image])
+    
+    shared_state.query_key = DynamicCache()
 
 
 # Perform dimensionality reduction
 llava_embeddeds = {"PCA": {}, "TSNE": {}, "UMAP": {}, "PCA_3d": {}, "TSNE_3d": {}, "UMAP_3d": {}}
-
 for layer in tqdm(range(num_layers)):
     llava_embeddeds["TSNE"][layer] = {}
     llava_embeddeds["TSNE_3d"][layer] = {}
@@ -236,17 +236,13 @@ for layer in tqdm(range(num_layers)):
 # Load DeepLabV3 model and weights
 weights = DeepLabV3_ResNet50_Weights.DEFAULT
 transforms = weights.transforms()#(resize_size=[(336, 336)])
-
 model_seg = deeplabv3_resnet50(weights=weights, progress=False)
 model_seg = model_seg.eval()
-
-
 batch = torch.stack([transforms(Image.fromarray(all_images[i].astype('uint8'))) for i in range(num_images)])
 output = model_seg(batch)['out']
 sem_class_to_idx = {cls: idx for (idx, cls) in enumerate(weights.meta["categories"])}
 sem_idx_to_class = {sem_class_to_idx[key]: key for key in sem_class_to_idx}
 sem_idx_to_class[0] = "bg"
-
 semantic_labels = {}
 for nth_image in range(num_images):
     semantic_labels[nth_image] = []
