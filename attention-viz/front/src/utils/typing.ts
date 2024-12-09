@@ -22,6 +22,7 @@ export namespace Typing {
         pca_x_3d: number;
         pca_y_3d: number;
         pca_z_3d: number;
+        is_image: boolean;
     }
     export interface TokenData { // shared by all heads and layers
         position: number;

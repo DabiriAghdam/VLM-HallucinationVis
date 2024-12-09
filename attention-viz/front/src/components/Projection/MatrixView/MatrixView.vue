@@ -26,6 +26,7 @@ import { PolygonLayer, ScatterplotLayer, TextLayer, LineLayer } from "@deck.gl/l
 
 import { computeMatrixProjection } from "@/utils/dataTransform";
 import { computeVitMatrixProjection } from "@/utils/vitDataTransform";
+import { computeVlmMatrixProjection } from "@/utils/vlmDataTransform";
 import RBush from 'rbush';
 
 // constants
@@ -962,7 +963,7 @@ export default defineComponent({
                     shallowData.value = projData;
                 }
                 else if (state.modelType == "LLaVA-1.5") {
-                    let projData = computeMatrixProjection(matrixData, tokenData);
+                    let projData = computeVlmMatrixProjection(matrixData, tokenData, matrixCellWidth, matrixCellHeight, matrixCellMargin);
                     shallowData.value = projData;
                 }
                 else if (state.modelType.includes("vit")) {

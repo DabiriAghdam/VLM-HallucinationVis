@@ -281,6 +281,40 @@ const computeMatrixProjectionPoint = (matrixData: Typing.MatrixData[], tokenData
             return [color.r, color.g, color.b];
         })
 
+        // const queryColor = d3.scaleSequential(function (t) {
+        //     return d3.interpolateYlGn(t / num_tokens * 0.75 + 0.25);
+        // }).domain([0, 1]);
+        // const keyColor = d3.scaleSequential(function (t) {
+        //     return d3.interpolatePuRd(t / num_tokens * 0.75 + 0.25);
+        // }).domain([0, 1]);
+
+        const getRowColor = (td: Typing.TokenData) => {
+            var colorstr = "rgb()";
+            if (td.type === "query") {
+                colorstr = queryColor(td.position);
+            } else if (td.type === "key") {
+                colorstr = keyColor(td.position);
+            }
+            const color = d3.color(colorstr)?.rgb();
+            if (!color) return [0, 0, 0];
+            return [color.r, color.g, color.b];
+        };
+
+        const getColColor = (td: Typing.TokenData) => {
+            var colorstr = "rgb()";
+            if (td.type === "query") {
+                colorstr = queryColor(td.pos_int);
+            } else if (td.type === "key") {
+                colorstr = keyColor(td.pos_int);
+            }
+            const color = d3.color(colorstr)?.rgb();
+            if (!color) return [0, 0, 0];
+            return [color.r, color.g, color.b];
+        };
+
+        const image_path = tokenData.map(td => td.imagePath);
+        const original_patch_path = tokenData.map(td => td.originalPatchPath);
+        
         // synthesize all point information
         const points = data.map((d, index) => ({
             coordinate: {
@@ -293,33 +327,33 @@ const computeMatrixProjectionPoint = (matrixData: Typing.MatrixData[], tokenData
             },
             color: {
                 query_key: colorsByType[index],
-                position: colorsByPosition[index],
-                pos_mod_5: colorsByDiscretePosition[index],
-                punctuation: colorsByPunctuation[index],
-                embed_norm: colorsByNorm[index],
-                token_length: colorsByLength[index],
-                sent_length: colorsBySentLength[index],
-                token_freq: colorsByFreq[index],
-                row: [0, 0, 0],
-                column: [0, 0, 0],
-                qk_map: [0, 0, 0],
-                no_outline: [0, 0, 0],
+                position: d.is_image ? [0, 0, 0] : colorsByPosition[index],
+                pos_mod_5: d.is_image ? [0, 0, 0] : colorsByDiscretePosition[index],
+                punctuation: d.is_image ? [0, 0, 0] : colorsByPunctuation[index],
+                embed_norm: d.is_image ? [0, 0, 0] : colorsByNorm[index],
+                token_length: d.is_image ? [0, 0, 0] : colorsByLength[index],
+                sent_length: d.is_image ? [0, 0, 0] : colorsBySentLength[index],
+                token_freq: d.is_image ? [0, 0, 0] : colorsByFreq[index],
+                row: d.is_image ? getRowColor(tokenData[index]) : [0, 0, 0],
+                column: d.is_image ? getColColor(tokenData[index]) : [0, 0, 0],
+                qk_map: colorsByType[index],
+                no_outline: colorsByType[index],
             },
             msg: {
                 position: pos_msgs[index],
-                categorical: cat_msgs[index],
-                norm: norm_msgs[index],
-                length: length_msgs[index],
-                freq: freq_msgs[index]
+                categorical: d.is_image ? "" : cat_msgs[index],
+                norm: d.is_image ? "" : norm_msgs[index],
+                length: d.is_image ? "" : length_msgs[index],
+                freq: d.is_image ? "" : freq_msgs[index],
             },
             layer,
             head,
             index,
             value: values[index],
             type: types[index],
-            normScaled: norms_scaled[index],
-            imagePath: "",
-            originalPatchPath: "",
+            normScaled: d.is_image ? 0 : norms_scaled[index],
+            imagePath: d.is_image ? image_path[index] : "",
+            originalPatchPath: d.is_image ? original_patch_path[index] : "",
         }));
 
         xs.push(...[xoffset, matrixCellWidth + xoffset]);
@@ -358,7 +392,7 @@ const computeMatrixProjectionLabel = (matrixData: Typing.MatrixData[], matrixCel
 };
 
 // compute projection for each point
-const computeMatrixProjection = (matrixData: Typing.MatrixData[], tokenData: Typing.TokenData[], matrixCellWidth = 100, matrixCellHeight = 100, matrixCellMargin = 20): Typing.Projection => {
+const computeVlmMatrixProjection = (matrixData: Typing.MatrixData[], tokenData: Typing.TokenData[], matrixCellWidth = 100, matrixCellHeight = 100, matrixCellMargin = 20): Typing.Projection => {
     const pts = computeMatrixProjectionPoint(matrixData, tokenData, matrixCellWidth, matrixCellHeight, matrixCellMargin)
 
     // get unique sentences
@@ -373,5 +407,5 @@ const computeMatrixProjection = (matrixData: Typing.MatrixData[], tokenData: Typ
 }
 
 export {
-    computeMatrixProjection
+    computeVlmMatrixProjection
 }

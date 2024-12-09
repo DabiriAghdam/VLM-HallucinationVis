@@ -2,7 +2,7 @@ import axios from "axios";
 import { Typing } from "@/utils/typing";
 
 // switch url based on development/production
-const dataServerUrl = "http://localhost:8500";
+const dataServerUrl = "http://localhost:8501";
 // const dataServerUrl = "http://18.219.70.154:8500";
 
 function get(field: string): Promise<any> {
