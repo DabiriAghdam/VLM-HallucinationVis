@@ -326,6 +326,19 @@ const image_color_info = [
     }
 ];
 
+const image_text_color_info = [
+    {
+        label: "query vs. key",
+        value: "query_key",
+        desc: "token type, query or key"
+    },
+    {
+        label: "query vs. key (fill)",
+        value: "qk_map",
+        desc: "token type, query or key (fill)"
+    },
+];
+
 export default defineComponent({
     components: { MatrixView, Legend, DataGrid, Circle, ArrowUpOutlined, ArrowDownOutlined, ArrowLeftOutlined, ArrowRightOutlined },
     setup() {
@@ -384,7 +397,7 @@ export default defineComponent({
             }),
             // modelOptions: ["vit-16", "vit-32", "bert", "gpt-2"].map((x) => (
             // modelOptions: ["vit-nat", "bert", "gpt-2"].map((x) => (
-                modelOptions: ["vit-nat", "bert", "gpt-2", "LLaVA-1.5"].map((x) => (
+                modelOptions: ["vit-nat", "LLaVA-1.5"].map((x) => (
                 // modelOptions: ["vit-nat", "vit-syn", "bert", "gpt-2"].map((x) => (
                 { value: x, label: x }
             )),
@@ -480,7 +493,11 @@ export default defineComponent({
 
             if (state.modelType.includes("vit")) {
                 state.num_message = messageStart + numInstances + " images)";
-            } else {
+            }
+            else if (state.modelType == "LLaVA-1.5") {
+                state.num_message = messageStart + numInstances + " image-text pairs)";
+            }
+            else {
                 state.num_message = messageStart + numInstances + " sentences)";
             }
         }
@@ -504,13 +521,21 @@ export default defineComponent({
                 const images = (matrixView.value as any).getUnique();
                 (dataGrid.value as any).drawGrid(images);
             }
+            else if(state.modelType == 'LLaVA-1.5') {
+                console.log('showing image-text data');
+                console.log(matrixView.value);
+                const images = (matrixView.value as any).getUnique();
+                (dataGrid.value as any).drawGrid(images);
+            }
         }
 
         const switchColorOptions = () => {
             // reset color options depending on model selected
             const curColorBy = state.colorBy;
             let color_map = state.modelType.includes("vit") ? image_color_info : text_color_info;
-
+            if (state.modelType == 'LLaVA-1.5') {
+                color_map = image_text_color_info;
+            }
             state.colorByOptions = color_map.map((x) => ({ value: x.value, label: x.label }));
             state.colorByDict = Object.assign({}, ...color_map.map((x) => ({ [x.value]: { label: x.label, desc: x.desc } })));
 

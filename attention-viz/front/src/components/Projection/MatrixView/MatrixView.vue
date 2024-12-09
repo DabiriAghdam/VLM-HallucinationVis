@@ -144,7 +144,7 @@ export default defineComponent({
         };
 
         const getImagePath = (d: Typing.Point) => {
-            if (state.colorBy == "no_outline") {
+            if (state.colorBy == "no_outline" || state.colorBy == "query_key") {
                 return d.originalPatchPath
             } else {
                 return d.imagePath
@@ -271,7 +271,7 @@ export default defineComponent({
             // main scatterplot(s)
             return new ScatterplotLayer({
                 id: "point-layer",
-                pickable: state.mode == 'single' && state.modelType == "bert" || state.modelType == "gpt-2",// || state.modelType == "LLaVA-1.5",
+                pickable: state.mode == 'single' && (state.modelType == "bert" || state.modelType == "gpt-2" || state.modelType == "LLaVA-1.5"),
                 data: points,
                 radiusMaxPixels: 5,
                 stroked: state.mode == 'single',
@@ -363,6 +363,21 @@ export default defineComponent({
             });
         };
 
+        const toMixLayer = (points: Typing.Point[]) => {
+            const imagePoints = points.filter(point => point.imagePath !== "");
+            const textPoints = points.filter(point => point.imagePath === "");
+            // console.log(`Number of image points: ${imagePoints.length}`);
+            // console.log(`Number of text points: ${textPoints.length}`);
+            const layers = [];
+            if (imagePoints.length > 0) {
+                layers.push(toImageLayer(imagePoints));
+            }
+            if (textPoints.length > 0) {
+                layers.push(toPointLayer(textPoints));
+            }
+            return layers;
+        };
+
 
         const toColorLayer = (points: Typing.Point[]) => {
             const minSize = state.mode == "single" ? 15 : 1.5;
@@ -447,7 +462,93 @@ export default defineComponent({
                 }
             });
         }
+        
+        const toMixColorLayer = (points: Typing.Point[]) => {
+            const imagePoints = points.filter(point => point.imagePath !== "");
+            const minSize = state.mode == "single" ? 15 : 1.5;
+            const maxSize = state.mode == "single"
+                ? 25
+                : state.zoom < 1
+                    ? 7
+                    : 15;
+            return new IconLayer({
+                id: 'coloring-layer',
+                data: imagePoints,
+                pickable: false,
+                // iconAtlas and iconMapping are required
+                // getIcon: return a string
+                iconAtlas: 'https://raw.githubusercontent.com/catherinesyeh/attention-viz/VIT-vis/img/coloring_helper.png',
+                iconMapping: {
+                    border: {
+                        x: 64,
+                        y: 0,
+                        width: 64,
+                        height: 64,
+                        mask: true
+                    }
+                },
+                getIcon: d => 'border',
+                getSize: (d: Typing.Point) => {
+                    const size = getImageSize();
+                    const defaultSize = size,
+                        highlightedSize = state.mode == 'single'
+                            ? size
+                            : size * 4;
+                    if (state.highlightedTokenIndices.length === 0) return defaultSize;
+                    return state.highlightedTokenIndices.includes(d.index)
+                        ? highlightedSize
+                        : defaultSize;
+                },
+                sizeScale: 1,
+                sizeMaxPixels: maxSize,
+                sizeMinPixels: minSize,
+                sizeUnits: "pixels",
+                getPosition: (d: Typing.Point) => getPointCoordinate(d),
+                getColor: (d: Typing.Point) => {
+                    const getColor = (d: Typing.Point) => {
+                        console.log(state.colorBy);
+                        switch (state.colorBy) {
+                            case 'query_key':
+                                return d.color.query_key
+                            case 'row':
+                                return d.color.row
+                            case 'column':
+                                return d.color.column
+                            case 'qk_map':
+                                return d.color.qk_map
+                            default:
+                                throw Error('invalid color channel')
+                        }
+                    }
 
+                    const defaultColor = [...getColor(d), 145],
+                        highlightColorQuery = [84, 148, 61, 0],
+                        highlightColorQueryDark = [157, 216, 135, 0],
+                        highlightColorKey = [193, 91, 125, 0],
+                        highlightColorKeyDark = [234, 138, 170, 0],
+                        unactiveColor = [...getColor(d), 0];
+
+                    if (state.view != 'search' && !state.highlightedTokenIndices.length) return defaultColor;
+                    return (
+                        state.highlightedTokenIndices.includes(d.index)
+                            ? d.type == "query"
+                                ? state.userTheme == "light-theme"
+                                    ? highlightColorQuery
+                                    : highlightColorQueryDark
+                                : state.userTheme == "light-theme"
+                                    ? highlightColorKey
+                                    : highlightColorKeyDark
+                            : unactiveColor
+                    ) as any;
+                },
+                updateTriggers: {
+                    getSize: [state.zoom, state.highlightedTokenIndices, state.mode, state.dimension],
+                    getPosition: [state.projectionMethod, state.dimension],
+                    getColor: [state.colorBy, state.highlightedTokenIndices, state.userTheme],
+                }
+            });
+        }
+        
         const toImageLayer = (points: Typing.Point[]) => {
             const minSize = state.mode == "single" ? 15 : 1.5;
             const maxSize = state.mode == "single"
@@ -457,7 +558,7 @@ export default defineComponent({
                     : 15;
             return new IconLayer({
                 id: 'image-scatter-layer',
-                pickable: state.mode == 'single' && state.modelType.includes("vit"),
+                pickable: state.mode == 'single' && (state.modelType.includes("vit") || state.modelType === "LLaVA-1.5"),
                 data: points,
                 stroked: state.mode == 'single',
                 getIcon: d => ({
@@ -639,7 +740,12 @@ export default defineComponent({
                     layers.push(toPointLayer(layer_points));
                 }
                 else if (state.modelType == "LLaVA-1.5"){
-                    layers.push(toPointLayer(layer_points));
+                    if (state.colorBy == "query_key") {
+                        layers.push(toMixLayer(layer_points));
+                    } else {
+                        layers.push(toMixLayer(layer_points));
+                        layers.push(toMixColorLayer(layer_points));
+                    }
                 }
                 else if (state.modelType.includes("vit")) {
                     if (state.colorBy == "query_key" || state.colorBy == "no_outline") {
@@ -675,7 +781,10 @@ export default defineComponent({
                 return [toPointLayer(points), toPlotHeadLayer(headings), toOverlayLayer(headings)];
             }
             else if (state.modelType == "LLaVA-1.5"){
-                return [toPointLayer(points), toPlotHeadLayer(headings), toOverlayLayer(headings)];
+                if (state.colorBy == "query_key"){
+                return [toMixLayer(points), toPlotHeadLayer(headings), toOverlayLayer(headings)];
+                }
+                return [toMixLayer(points), toMixColorLayer(points), toPlotHeadLayer(headings), toOverlayLayer(headings)];
             }
             else {
                 if (state.colorBy == "query_key" || state.colorBy == "no_outline") {
@@ -797,65 +906,66 @@ export default defineComponent({
                 // zoom into single view from matrix view
                 let obj = info.object as Typing.PlotHead;
                 zoomToPlot(obj.layer, obj.head, true, true);
-            } else if (state.mode === 'single' && info.layer && (info.layer.id === 'point-layer' || info.layer.id === 'image-scatter-layer')) {
+            } 
+            // else if (state.mode === 'single' && info.layer && (info.layer.id === 'point-layer' || info.layer.id === 'image-scatter-layer')) {
                 // open attn view if single view 
-                store.commit("updateAttentionLoading", true);
-                if (state.view != "attn") { // switch to attention view if not already
-                    store.commit("setView", 'attn');
-                    if (!state.showAll) {
-                        state.showAll = true; // turn on labels by default
-                    }
-                }
+                // store.commit("updateAttentionLoading", true);
+                // if (state.view != "attn") { // switch to attention view if not already
+                //     store.commit("setView", 'attn');
+                //     if (!state.showAll) {
+                //         state.showAll = true; // turn on labels by default
+                //     }
+                // }
+                // let pt = info.object as Typing.Point;
+                // state.clickedPoint = pt;
+                // store.dispatch("setClickedPoint", pt);
 
-                let pt = info.object as Typing.Point;
-                state.clickedPoint = pt;
-                store.dispatch("setClickedPoint", pt);
+                // let same_indices = [] as number[];
+                // let opposite_indices = [] as number[];
+                // let pt_info = state.tokenData[pt.index];
+                
+                // if (info.layer.id === 'point-layer') { // bert or gpt
+                //     let offset = state.tokenData.length / 2;
+                //     let start_index = pt.index - pt_info.pos_int;
 
-                let same_indices = [] as number[];
-                let opposite_indices = [] as number[];
-                let pt_info = state.tokenData[pt.index];
+                //     same_indices = Array.from({ length: pt_info.length }, (x, i) => i + start_index);
+                //     if (pt_info.type === "key") {
+                //         start_index -= offset;
+                //     } else {
+                //         start_index += offset;
+                //     }
 
-                if (info.layer.id === 'point-layer') { // bert or gpt
-                    let offset = state.tokenData.length / 2;
-                    let start_index = pt.index - pt_info.pos_int;
+                //     opposite_indices = Array.from({ length: pt_info.length }, (x, i) => i + start_index);
+                // } else { // vit
+                //     let offset = 0;
+                //     if (["vit-32", "vit-nat", "vit-syn"].includes(state.modelType)) {
+                //         offset = 50;
+                //     }
+                //     else {
+                //         offset = 197;
+                //     }
 
-                    same_indices = Array.from({ length: pt_info.length }, (x, i) => i + start_index);
-                    if (pt_info.type === "key") {
-                        start_index -= offset;
-                    } else {
-                        start_index += offset;
-                    }
+                //     let start_index = 0
+                //     if (pt.value == "CLS") {
+                //         start_index = pt.index - (pt_info.position * Math.sqrt(offset - 1) + pt_info.pos_int);
+                //     } else {
+                //         start_index = pt.index - (pt_info.position * Math.sqrt(offset - 1) + pt_info.pos_int + 1);
+                //     }
 
-                    opposite_indices = Array.from({ length: pt_info.length }, (x, i) => i + start_index);
-                } else { // vit
-                    let offset = 0;
-                    if (["vit-32", "vit-nat", "vit-syn"].includes(state.modelType)) {
-                        offset = 50;
-                    }
-                    else {
-                        offset = 197;
-                    }
+                //     same_indices = Array.from({ length: offset }, (x, i) => i + start_index);
+                //     if (pt_info.type === "key") {
+                //         start_index -= offset;
+                //     } else {
+                //         start_index += offset;
+                //     }
 
-                    let start_index = 0
-                    if (pt.value == "CLS") {
-                        start_index = pt.index - (pt_info.position * Math.sqrt(offset - 1) + pt_info.pos_int);
-                    } else {
-                        start_index = pt.index - (pt_info.position * Math.sqrt(offset - 1) + pt_info.pos_int + 1);
-                    }
+                //     opposite_indices = Array.from({ length: offset }, (x, i) => i + start_index);
+                // }
 
-                    same_indices = Array.from({ length: offset }, (x, i) => i + start_index);
-                    if (pt_info.type === "key") {
-                        start_index -= offset;
-                    } else {
-                        start_index += offset;
-                    }
-
-                    opposite_indices = Array.from({ length: offset }, (x, i) => i + start_index);
-                }
-
-                let tokenIndices = [...same_indices, ...opposite_indices];
-                store.commit("setHighlightedTokenIndices", tokenIndices);
-            } else if (!info.layer && state.view !== 'none') {
+                // let tokenIndices = [...same_indices, ...opposite_indices];
+                // store.commit("setHighlightedTokenIndices", tokenIndices);
+            // } 
+            else if (!info.layer && state.view !== 'none') {
                 // clear selection if user clicks on empty space in canvas for both matrix/single view
                 store.commit("setClearSelection", true);
             }

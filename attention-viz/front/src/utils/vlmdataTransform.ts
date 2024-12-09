@@ -149,7 +149,9 @@ const computeMatrixProjectionPoint = (matrixData: Typing.MatrixData[], tokenData
     // compute msgs for each token
     const pos_msgs = tokenData.map(
         (td) =>
-            `<b class='${td.type}'>${td.value}</b> (<i>${td.type}</i>, pos: ${td.pos_int} of ${td.length - 1})`
+            td.length !== undefined
+                ? `<b class='${td.type}'>${td.value}</b> (<i>${td.type}</i>, pos: ${td.pos_int} of ${td.length - 1})`
+                : `<b class='${td.type}'>${td.value}</b> (<i>${td.type}</i>, row: ${td.position}, col: ${td.pos_int})`
     );
     const cat_msgs = tokenData.map(
         (td) =>
