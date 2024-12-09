@@ -17,7 +17,7 @@
     </div>
     <div v-else-if="modelType == 'LLaVA-1.5'">
         <!-- show llava attention -->
-        <div class="row" :class="{ splitcol: showAgg }">
+        <!-- <div class="row" :class="{ splitcol: showAgg }">
             <AttnMap :myID="'sentAttn'" :otherID="'aggAttn'" />
         </div>
         <Transition>
@@ -28,8 +28,8 @@
         <Transition>
             <a-button id="show-agg" type="primary" @click="showAggAttention" v-show="!showAgg">
                 show aggregate attention
-            </a-button>
-        </Transition>
+            </a-button> -->
+        <!-- </Transition> -->
     </div>
     <div v-else>
         <!-- show vit attention -->
