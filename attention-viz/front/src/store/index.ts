@@ -89,10 +89,10 @@ export const store = createStore<State>({
     mode: 'matrix',
     view: 'none',
     dimension: '2D',
-    userTheme: 'light-theme',
+    userTheme: 'dark-theme',
     showAll: false,
     showAttention: false,
-    sizeByNorm: false,
+    sizeByNorm: true,
   },
   modules: { // each module can contain its own state, mutations, actions, etc.
   },
