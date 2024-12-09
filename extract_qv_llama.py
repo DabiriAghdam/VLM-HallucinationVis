@@ -64,7 +64,7 @@ num_images = 2
 patch_size = 14 
 border_width = int(patch_size / 8)
 
-centering = False
+centering = True
 scale = False
 num_layers = model.config.text_config.num_hidden_layers
 num_heads = model.config.text_config.num_attention_heads
@@ -98,6 +98,8 @@ all_patches = None
 all_images = []
 all_sentences = []
 all_token_ids = []
+all_queries = {}
+all_keys = {}
 
 for i in tqdm(range(num_images)):
     clear_gpu_memory()
@@ -117,7 +119,7 @@ for i in tqdm(range(num_images)):
         outputs = model.generate(**inputs, max_new_tokens=20, use_cache=True, return_dict_in_generate=True, output_attentions=True)
 
     all_sentences.append(processor.batch_decode(outputs['sequences'], skip_special_tokens=True)[0].strip())
-    all_token_ids.append(outputs['sequences'][0])
+    all_token_ids.append(outputs['sequences'][0][:-1])
 
     attentions = outputs.attentions
 
@@ -183,16 +185,19 @@ for i in tqdm(range(num_images)):
 
     for layer in range(num_layers):
         if i == 0:
-            all_output[layer] = {}
+            all_queries[layer] = {}
+            all_keys[layer] = {}
 
         query_heads = shared_state.query_key[layer][0]
         key_heads = shared_state.query_key[layer][1]
+
         for head in range(num_heads):
-            combined = np.concatenate([query_heads[:, head, :, :].cpu().detach().numpy()[0, :], key_heads[:, head, :, :].cpu().detach().numpy()[0, :]])
             if (i == 0):
-                all_output[layer][head] = combined
+                all_queries[layer][head] = query_heads[:, head, :, :].cpu().detach().numpy()[0, :]
+                all_keys[layer][head] = key_heads[:, head, :, :].cpu().detach().numpy()[0, :]
             else:
-                all_output[layer][head] = np.concatenate([all_output[layer][head], combined])
+                all_queries[layer][head] = np.concatenate((all_queries[layer][head], query_heads[:, head, :, :].cpu().detach().numpy()[0, :]), axis=0)
+                all_keys[layer][head] = np.concatenate((all_keys[layer][head], key_heads[:, head, :, :].cpu().detach().numpy()[0, :]), axis=0)
     key_image_patches = np.concatenate([pink_border_v, 
                                         np.concatenate([pink_border_h, image_patches, pink_border_h], axis=2),
                                         pink_border_v], axis=1)
@@ -208,6 +213,46 @@ for i in tqdm(range(num_images)):
     
     shared_state.query_key = DynamicCache()
 
+if centering:
+    queries = all_queries[layer][head].copy().astype("float")
+    keys = all_keys[layer][head].copy().astype("float")
+    mean_shift = np.mean(queries, axis=0) - np.mean(keys, axis=0)
+    keys += mean_shift
+    all_keys[layer][head] = keys
+
+if scale:
+    queries = all_queries[layer][head].copy().astype("float")
+    keys = all_keys[layer][head].copy().astype("float")
+    q_n = np.linalg.norm(queries, axis=1).mean()
+    k_n = np.linalg.norm(keys, axis=1).mean()
+    
+    c = np.sqrt(q_n / k_n) 
+
+    keys *= c
+    queries *= (1 / c)
+    all_keys[layer][head] = keys
+    all_queries[layer][head] = queries
+
+last_start = 0
+last_end = 0
+for i in range(num_images):
+    start = len(all_token_ids[i-1]) if i >= 1 else 0
+    end = len(all_token_ids[i])
+
+    last_start += start
+    last_end += end
+    print(last_start, last_end)
+
+    for layer in range(num_layers):
+            if i == 0:
+                all_output[layer] = {}
+
+            for head in range(num_heads):
+                combined = np.concatenate([all_queries[layer][head][last_start:last_end], all_keys[layer][head][last_start:last_end]])
+                if (i == 0):
+                    all_output[layer][head] = combined
+                else:
+                    all_output[layer][head] = np.concatenate([all_output[layer][head], combined])
 
 # Perform dimensionality reduction
 llava_embeddeds = {"PCA": {}, "TSNE": {}, "UMAP": {}, "PCA_3d": {}, "TSNE_3d": {}, "UMAP_3d": {}}
